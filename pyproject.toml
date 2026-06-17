@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simple-transformer"
+version = "0.1.0"
+description = "A small transformer from scratch for learning addition."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0",
+    "numpy>=1.24",
+    "tqdm>=4.66",
+    "matplotlib>=3.7",
+    "ipykernel>=6.25",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
