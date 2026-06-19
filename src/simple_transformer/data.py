@@ -160,6 +160,7 @@ def make_addition_dataloader(
     *,
     seed: int | None = None,
     shuffle: bool = True,
+    pin_memory: bool = False,
 ) -> tuple[DataLoader, AdditionTokenizer]:
     """Create a DataLoader for next-token prediction on addition examples."""
 
@@ -174,7 +175,12 @@ def make_addition_dataloader(
         tokenizer=tokenizer,
         sequence_length=max_addition_text_length(max_digits),
     )
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        pin_memory=pin_memory,
+    )
 
     return loader, tokenizer
 

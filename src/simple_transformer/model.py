@@ -62,7 +62,7 @@ class RotaryEmbedding(nn.Module):
         sin = freqs.sin().to(dtype)[None, None, :, :]
         return cos, sin
 
-    def _apply(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+    def _apply_rope(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         """
         x shape: [batch, n_heads, seq_len, head_dim]
         """
@@ -87,7 +87,7 @@ class RotaryEmbedding(nn.Module):
             start_pos + seq_len,
             device=q.device,
         )
-        return self._apply(q, positions), self._apply(k, positions)
+        return self._apply_rope(q, positions), self._apply_rope(k, positions)
 
 
 class SwiGLU(nn.Module):
@@ -346,6 +346,7 @@ class SimpleTransformerLM(nn.Module):
             device=input_ids.device,
         )
         logits = self(input_ids, cache=cache)["logits"][:, -1, :]
+        finished = torch.zeros(input_ids.size(0), dtype=torch.bool, device=input_ids.device)
 
         for _ in range(max_new_tokens):
             if input_ids.size(1) >= self.config.max_seq_len:
@@ -353,8 +354,13 @@ class SimpleTransformerLM(nn.Module):
 
             # Greedy decoding: always pick the highest-logit next token.
             next_token = logits.argmax(dim=-1, keepdim=True)
+            if eos_token_id is not None:
+                eos_tokens = torch.full_like(next_token, eos_token_id)
+                next_token = torch.where(finished[:, None], eos_tokens, next_token)
+                finished |= next_token.squeeze(1) == eos_token_id
+
             input_ids = torch.cat((input_ids, next_token), dim=1)
-            if eos_token_id is not None and torch.all(next_token == eos_token_id):
+            if eos_token_id is not None and torch.all(finished):
                 break
             if input_ids.size(1) < self.config.max_seq_len:
                 logits = self(next_token, cache=cache)["logits"][:, -1, :]
