@@ -126,7 +126,7 @@ def local_training_config(
         train_examples=16_384,
         val_examples=512,
         batch_size=64,
-        epochs=40,
+        epochs=20,
         learning_rate=3e-4,
         weight_decay=0.0,
         warmup_steps=10,

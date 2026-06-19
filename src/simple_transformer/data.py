@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from random import Random
+from typing import TYPE_CHECKING
 
 import torch
 from torch.utils.data import DataLoader, Dataset
+
+if TYPE_CHECKING:
+    from simple_transformer.config import TrainingConfig
 
 
 PAD_TOKEN = "<pad>"
@@ -185,6 +189,30 @@ def make_addition_dataloader(
     )
 
     return loader, tokenizer
+
+
+def make_train_val_loaders(
+    config: TrainingConfig,
+) -> tuple[DataLoader, DataLoader, AdditionTokenizer]:
+    """Create train and validation loaders from a training config."""
+
+    train_loader, tokenizer = make_addition_dataloader(
+        num_examples=config.train_examples,
+        max_digits=config.max_digits,
+        batch_size=config.batch_size,
+        seed=config.seed,
+        shuffle=True,
+        pin_memory=config.pin_memory,
+    )
+    val_loader, _ = make_addition_dataloader(
+        num_examples=config.val_examples,
+        max_digits=config.max_digits,
+        batch_size=config.batch_size,
+        seed=config.seed + 1,
+        shuffle=False,
+        pin_memory=config.pin_memory,
+    )
+    return train_loader, val_loader, tokenizer
 
 
 def max_addition_text_length(max_digits: int) -> int:

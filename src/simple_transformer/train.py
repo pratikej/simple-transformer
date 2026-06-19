@@ -5,15 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import nullcontext
 import math
+from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
 
+from simple_transformer.checkpoint import CheckpointManager
 from simple_transformer.config import TrainingConfig
-from simple_transformer.data import (
-    AdditionTokenizer,
-    make_addition_dataloader,
-)
 from simple_transformer.metrics import (
     FitResult,
     MetricsAccumulator,
@@ -78,30 +76,6 @@ def make_scheduler(
         return config.min_lr_ratio + (1.0 - config.min_lr_ratio) * cosine
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-
-
-def make_train_val_loaders(
-    config: TrainingConfig,
-) -> tuple[DataLoader, DataLoader, AdditionTokenizer]:
-    """Create train and validation loaders from a training config."""
-
-    train_loader, tokenizer = make_addition_dataloader(
-        num_examples=config.train_examples,
-        max_digits=config.max_digits,
-        batch_size=config.batch_size,
-        seed=config.seed,
-        shuffle=True,
-        pin_memory=config.pin_memory,
-    )
-    val_loader, _ = make_addition_dataloader(
-        num_examples=config.val_examples,
-        max_digits=config.max_digits,
-        batch_size=config.batch_size,
-        seed=config.seed + 1,
-        shuffle=False,
-        pin_memory=config.pin_memory,
-    )
-    return train_loader, val_loader, tokenizer
 
 
 def prepare_model(
@@ -242,6 +216,8 @@ def fit(
     scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
     on_epoch: Callable[[int, TrainMetrics, TrainMetrics], None] | None = None,
     observer: TrainingObserver | None = None,
+    checkpoint_manager: CheckpointManager | None = None,
+    resume_from: str | Path | None = None,
 ) -> FitResult:
     """Run a full training loop."""
 
@@ -253,8 +229,23 @@ def fit(
     train_history: list[TrainMetrics] = []
     val_history: list[TrainMetrics] = []
     global_step = 0
+    start_epoch = 1
 
-    for epoch in range(1, config.epochs + 1):
+    if resume_from is not None:
+        loader = checkpoint_manager or CheckpointManager()
+        checkpoint = loader.load_checkpoint(
+            resume_from,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            map_location=config.device,
+        )
+        train_history = checkpoint["train_history"]
+        val_history = checkpoint["val_history"]
+        global_step = int(checkpoint["global_step"])
+        start_epoch = int(checkpoint["epoch"]) + 1
+
+    for epoch in range(start_epoch, config.epochs + 1):
         train_metrics = train_one_epoch(
             model,
             train_loader,
@@ -279,6 +270,18 @@ def fit(
             on_epoch(epoch, train_metrics, val_metrics)
         if observer is not None:
             observer.log_epoch(epoch, train_metrics, val_metrics)
+        if checkpoint_manager is not None:
+            checkpoint_manager.save_epoch(
+                epoch=epoch,
+                global_step=global_step,
+                model=model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                train_history=train_history,
+                val_history=val_history,
+                training_config=config,
+                model_config=getattr(model, "config", None),
+            )
 
     return FitResult(train=train_history, validation=val_history)
 

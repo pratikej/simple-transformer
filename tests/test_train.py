@@ -1,7 +1,7 @@
 from simple_transformer.config import TrainingConfig, TransformerConfig, local_training_config
-from simple_transformer.data import ADDITION_VOCAB
+from simple_transformer.data import ADDITION_VOCAB, make_train_val_loaders
 from simple_transformer.model import SimpleTransformerLM
-from simple_transformer.train import fit, make_train_val_loaders
+from simple_transformer.train import fit
 
 
 def test_fit_runs_one_small_cpu_epoch():
