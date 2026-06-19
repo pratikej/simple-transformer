@@ -103,6 +103,8 @@ class AdditionDataset(Dataset):
         )
         input_ids = torch.tensor(padded_ids[:-1], dtype=torch.long)
         labels = torch.tensor(padded_ids[1:], dtype=torch.long)
+        equals_index = token_ids.index(self.tokenizer.token_to_id["="])
+        labels[:equals_index] = IGNORE_INDEX
         labels[labels == self.tokenizer.pad_token_id] = IGNORE_INDEX
 
         return {

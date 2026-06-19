@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import nullcontext
-from dataclasses import dataclass
 import math
 
 import torch
@@ -12,29 +11,22 @@ from torch.utils.data import DataLoader
 
 from simple_transformer.config import TrainingConfig
 from simple_transformer.data import (
-    IGNORE_INDEX,
     AdditionTokenizer,
     make_addition_dataloader,
 )
+from simple_transformer.metrics import (
+    FitResult,
+    MetricsAccumulator,
+    TrainMetrics,
+    TrainingObserver,
+    correct_count,
+    learning_rate,
+    make_step_metrics,
+    now,
+    sync_if_cuda,
+    token_count,
+)
 from simple_transformer.model import SimpleTransformerLM
-
-
-@dataclass(frozen=True)
-class TrainMetrics:
-    """Metrics collected for one train or validation pass."""
-
-    loss: float
-    accuracy: float
-    learning_rate: float
-    grad_norm: float | None = None
-
-
-@dataclass(frozen=True)
-class FitResult:
-    """Per-epoch training history."""
-
-    train: list[TrainMetrics]
-    validation: list[TrainMetrics]
 
 
 def make_optimizer(
@@ -130,18 +122,22 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     *,
     config: TrainingConfig,
+    epoch: int = 1,
+    global_step_start: int = 0,
     scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
     on_step: Callable[[int, TrainMetrics], None] | None = None,
+    observer: TrainingObserver | None = None,
 ) -> TrainMetrics:
     """Train for one epoch and return aggregate metrics."""
 
     model.train()
-    total_loss = 0.0
-    total_correct = 0
-    total_tokens = 0
+    accumulator = MetricsAccumulator()
     last_grad_norm: float | None = None
+    data_start = now()
 
     for step, batch in enumerate(loader, start=1):
+        data_time_s = now() - data_start
+        compute_start = now()
         input_ids = batch["input_ids"].to(config.device, non_blocking=config.pin_memory)
         labels = batch["labels"].to(config.device, non_blocking=config.pin_memory)
 
@@ -162,27 +158,47 @@ def train_one_epoch(
         optimizer.step()
         if scheduler is not None:
             scheduler.step()
+        sync_if_cuda(config.device)
 
-        token_count = metrics_token_count(labels)
-        total_loss += float(loss.item()) * token_count
-        total_correct += _correct_count(output["logits"], labels)
-        total_tokens += token_count
+        tokens = token_count(labels)
+        correct = correct_count(output["logits"], labels)
+        loss_value = float(loss.item())
+        compute_time_s = now() - compute_start
+        accumulator.update(loss=loss_value, correct=correct, tokens=tokens)
+        global_step = global_step_start + step
 
         if on_step is not None and step % config.log_every == 0:
             on_step(
                 step,
                 TrainMetrics(
-                    loss=float(loss.item()),
-                    accuracy=_correct_count(output["logits"], labels) / token_count,
-                    learning_rate=_learning_rate(optimizer),
+                    loss=loss_value,
+                    accuracy=correct / tokens,
+                    learning_rate=learning_rate(optimizer),
                     grad_norm=last_grad_norm,
                 ),
             )
+        if observer is not None and step % config.log_every == 0:
+            observer.log_step(
+                make_step_metrics(
+                    epoch=epoch,
+                    step=step,
+                    global_step=global_step,
+                    phase="train",
+                    loss=loss_value,
+                    correct=correct,
+                    tokens=tokens,
+                    examples=input_ids.size(0),
+                    learning_rate=learning_rate(optimizer),
+                    data_time_s=data_time_s,
+                    compute_time_s=compute_time_s,
+                    grad_norm=last_grad_norm,
+                    device=config.device,
+                )
+            )
+        data_start = now()
 
-    return TrainMetrics(
-        loss=total_loss / total_tokens,
-        accuracy=total_correct / total_tokens,
-        learning_rate=_learning_rate(optimizer),
+    return accumulator.to_metrics(
+        learning_rate=learning_rate(optimizer),
         grad_norm=last_grad_norm,
     )
 
@@ -198,9 +214,7 @@ def validate(
     """Evaluate on a validation loader."""
 
     model.eval()
-    total_loss = 0.0
-    total_correct = 0
-    total_tokens = 0
+    accumulator = MetricsAccumulator()
 
     for batch in loader:
         input_ids = batch["input_ids"].to(config.device, non_blocking=config.pin_memory)
@@ -208,16 +222,14 @@ def validate(
         with _amp_context(config):
             output = model(input_ids, labels=labels)
 
-        token_count = metrics_token_count(labels)
-        total_loss += float(output["loss"].item()) * token_count
-        total_correct += _correct_count(output["logits"], labels)
-        total_tokens += token_count
+        tokens = token_count(labels)
+        accumulator.update(
+            loss=float(output["loss"].item()),
+            correct=correct_count(output["logits"], labels),
+            tokens=tokens,
+        )
 
-    return TrainMetrics(
-        loss=total_loss / total_tokens,
-        accuracy=total_correct / total_tokens,
-        learning_rate=learning_rate,
-    )
+    return accumulator.to_metrics(learning_rate=learning_rate)
 
 
 def fit(
@@ -229,6 +241,7 @@ def fit(
     optimizer: torch.optim.Optimizer | None = None,
     scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
     on_epoch: Callable[[int, TrainMetrics, TrainMetrics], None] | None = None,
+    observer: TrainingObserver | None = None,
 ) -> FitResult:
     """Run a full training loop."""
 
@@ -239,6 +252,7 @@ def fit(
         scheduler = make_scheduler(optimizer, config, steps_per_epoch=len(train_loader))
     train_history: list[TrainMetrics] = []
     val_history: list[TrainMetrics] = []
+    global_step = 0
 
     for epoch in range(1, config.epochs + 1):
         train_metrics = train_one_epoch(
@@ -246,37 +260,27 @@ def fit(
             train_loader,
             optimizer,
             config=config,
+            epoch=epoch,
+            global_step_start=global_step,
             scheduler=scheduler,
+            observer=observer,
         )
+        global_step += len(train_loader)
         val_metrics = validate(
             model,
             val_loader,
             config=config,
-            learning_rate=_learning_rate(optimizer),
+            learning_rate=learning_rate(optimizer),
         )
         train_history.append(train_metrics)
         val_history.append(val_metrics)
 
         if on_epoch is not None:
             on_epoch(epoch, train_metrics, val_metrics)
+        if observer is not None:
+            observer.log_epoch(epoch, train_metrics, val_metrics)
 
     return FitResult(train=train_history, validation=val_history)
-
-
-def metrics_token_count(labels: torch.Tensor) -> int:
-    """Count non-padding target tokens."""
-
-    return int((labels != IGNORE_INDEX).sum().item())
-
-
-def _correct_count(logits: torch.Tensor, labels: torch.Tensor) -> int:
-    predictions = logits.argmax(dim=-1)
-    mask = labels != IGNORE_INDEX
-    return int((predictions[mask] == labels[mask]).sum().item())
-
-
-def _learning_rate(optimizer: torch.optim.Optimizer) -> float:
-    return float(optimizer.param_groups[0]["lr"])
 
 
 def _amp_context(config: TrainingConfig):

@@ -44,8 +44,15 @@ def test_addition_dataset_returns_shifted_inputs_and_labels():
     assert set(batch) == {"input_ids", "labels"}
     assert batch["input_ids"].dtype == torch.long
     assert batch["labels"].dtype == torch.long
-    assert batch["labels"][4].item() == EOS_TOKEN_ID
-    assert torch.all(batch["labels"][5:] == IGNORE_INDEX)
+    assert batch["labels"].tolist() == [
+        IGNORE_INDEX,
+        IGNORE_INDEX,
+        IGNORE_INDEX,
+        5,
+        EOS_TOKEN_ID,
+        IGNORE_INDEX,
+        IGNORE_INDEX,
+    ]
 
 
 def test_make_addition_dataloader_batches_examples():

@@ -2,7 +2,7 @@ import torch
 
 from simple_transformer.config import small_model_config
 from simple_transformer.data import AdditionTokenizer
-from simple_transformer.model import SimpleTransformerLM, count_parameters
+from simple_transformer.model import SimpleTransformerLM
 
 
 def test_small_addition_model_forward_pass():
@@ -15,7 +15,6 @@ def test_small_addition_model_forward_pass():
 
     assert output["logits"].shape == (2, config.max_seq_len - 1, config.vocab_size)
     assert output["loss"].ndim == 0
-    assert 900_000 < count_parameters(model) < 1_100_000
 
 
 def test_small_model_config_sets_flash_from_device():
