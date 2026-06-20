@@ -196,19 +196,33 @@ def make_train_val_loaders(
 ) -> tuple[DataLoader, DataLoader, AdditionTokenizer]:
     """Create train and validation loaders from a training config."""
 
-    train_loader, tokenizer = make_addition_dataloader(
-        num_examples=config.train_examples,
+    examples = _make_unique_addition_examples(
+        num_examples=config.train_examples + config.val_examples,
         max_digits=config.max_digits,
-        batch_size=config.batch_size,
         seed=config.seed,
+    )
+
+    tokenizer = AdditionTokenizer()
+    sequence_length = max_addition_text_length(config.max_digits)
+    train_dataset = AdditionDataset(
+        examples[: config.train_examples],
+        tokenizer=tokenizer,
+        sequence_length=sequence_length,
+    )
+    val_dataset = AdditionDataset(
+        examples[config.train_examples :],
+        tokenizer=tokenizer,
+        sequence_length=sequence_length,
+    )
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=config.batch_size,
         shuffle=True,
         pin_memory=config.pin_memory,
     )
-    val_loader, _ = make_addition_dataloader(
-        num_examples=config.val_examples,
-        max_digits=config.max_digits,
+    val_loader = DataLoader(
+        val_dataset,
         batch_size=config.batch_size,
-        seed=config.seed + 1,
         shuffle=False,
         pin_memory=config.pin_memory,
     )
@@ -226,3 +240,49 @@ def max_addition_text_length(max_digits: int) -> int:
 
 def _max_digit_bounds(max_digits: int) -> tuple[int, int]:
     return 0, 10**max_digits - 1
+
+
+def _make_unique_addition_examples(
+    num_examples: int,
+    max_digits: int,
+    *,
+    seed: int | None = None,
+) -> list[AdditionExample]:
+    if num_examples < 0:
+        raise ValueError("num_examples must be non-negative")
+    if max_digits < 1:
+        raise ValueError("max_digits must be at least 1")
+
+    min_value, max_value = _max_digit_bounds(max_digits)
+    value_count = max_value - min_value + 1
+    population_size = value_count * value_count
+    if num_examples > population_size:
+        raise ValueError(
+            f"Requested {num_examples} examples, but only {population_size} "
+            "unique operand pairs are available"
+        )
+
+    rng = Random(seed)
+    pairs: set[tuple[int, int]] = set()
+    while len(pairs) < num_examples:
+        pairs.add(
+            (
+                rng.randint(min_value, max_value),
+                rng.randint(min_value, max_value),
+            )
+        )
+
+    examples = []
+    for left, right in pairs:
+        total = left + right
+        examples.append(
+            AdditionExample(
+                left=left,
+                right=right,
+                total=total,
+                text=f"{left}+{right}={total}",
+            )
+        )
+
+    rng.shuffle(examples)
+    return examples

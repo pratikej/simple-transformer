@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from simple_transformer.config import TrainingConfig
 from simple_transformer.data import (
     EOS_TOKEN_ID,
     IGNORE_INDEX,
@@ -9,6 +10,7 @@ from simple_transformer.data import (
     AdditionTokenizer,
     make_addition_dataloader,
     make_addition_dataset,
+    make_train_val_loaders,
 )
 
 
@@ -62,3 +64,18 @@ def test_make_addition_dataloader_batches_examples():
     assert tokenizer.vocab_size == 14
     assert batch["input_ids"].shape == (2, 9)
     assert batch["labels"].shape == (2, 9)
+
+
+def test_make_train_val_loaders_have_distinct_examples():
+    config = TrainingConfig(
+        max_digits=2,
+        train_examples=32,
+        val_examples=16,
+        batch_size=8,
+    )
+
+    train_loader, val_loader, _ = make_train_val_loaders(config)
+    train_examples = {example.text for example in train_loader.dataset.examples}
+    val_examples = {example.text for example in val_loader.dataset.examples}
+
+    assert train_examples.isdisjoint(val_examples)
