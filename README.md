@@ -1,10 +1,13 @@
 # simple-transformer
 
-Build a small transformer from scratch for learning.
+Build a small transformer from scratch for learning arithmetic.
 
-The first target is a roughly 10M parameter model that learns addition on
-synthetic examples. The vocabulary can stay intentionally tiny: digits `0-9`,
-space, `+`, and `=`.
+The first target is a small decoder-only transformer that learns synthetic
+integer arithmetic expressions. Examples look like `12+7=19`, `8*9=72`,
+`10-14=-4`, and `9/2=4`; division targets are rounded integers.
+
+The vocabulary is intentionally tiny: digits `0-9`, operators `+`, `-`, `*`,
+`/`, `=`, plus padding and EOS tokens.
 
 ## Project Layout
 

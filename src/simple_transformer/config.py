@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from simple_transformer.data import ADDITION_VOCAB, max_addition_text_length
+from simple_transformer.data import (
+    ARITHMETIC_OPERATIONS,
+    ARITHMETIC_VOCAB,
+    max_arithmetic_text_length,
+)
 
 
 @dataclass(frozen=True)
@@ -49,11 +53,11 @@ def small_model_config(
     max_digits: int = 3,
     device: str = "cpu",
 ) -> TransformerConfig:
-    """Create a roughly 1M parameter config for experiments."""
+    """Create a ~2M parameter config for experiments."""
 
     return TransformerConfig(
-        vocab_size=len(ADDITION_VOCAB),
-        max_seq_len=max_addition_text_length(max_digits),
+        vocab_size=len(ARITHMETIC_VOCAB),
+        max_seq_len=max_arithmetic_text_length(max_digits),
         d_model=192,
         n_layers=5,
         n_heads=6,
@@ -70,6 +74,7 @@ class TrainingConfig:
     """Configuration for a simple local training run."""
 
     max_digits: int = 3
+    operations: tuple[str, ...] = ARITHMETIC_OPERATIONS
     train_examples: int = 2048
     val_examples: int = 512
     batch_size: int = 64
@@ -91,6 +96,10 @@ class TrainingConfig:
     def __post_init__(self) -> None:
         if self.max_digits < 1:
             raise ValueError("max_digits must be at least 1")
+        if not self.operations:
+            raise ValueError("operations must be non-empty")
+        if unsupported := set(self.operations) - set(ARITHMETIC_OPERATIONS):
+            raise ValueError(f"Unsupported operations: {sorted(unsupported)}")
         if self.train_examples < 1:
             raise ValueError("train_examples must be positive")
         if self.val_examples < 1:

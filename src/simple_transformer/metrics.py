@@ -116,7 +116,7 @@ class TensorBoardTrainingObserver(TrainingObserver):
 
     def __init__(
         self,
-        log_dir: str | Path = "runs/local-addition",
+        log_dir: str | Path = "runs/local-arithmetic",
         *,
         flush_secs: int = 10,
     ) -> None:

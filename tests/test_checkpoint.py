@@ -4,7 +4,7 @@ import torch
 
 from simple_transformer.checkpoint import CheckpointConfig, CheckpointManager
 from simple_transformer.config import TrainingConfig, TransformerConfig
-from simple_transformer.data import ADDITION_VOCAB, make_train_val_loaders
+from simple_transformer.data import ARITHMETIC_VOCAB, make_train_val_loaders
 from simple_transformer.model import SimpleTransformerLM
 from simple_transformer.train import fit
 
@@ -105,8 +105,8 @@ def _training_config(*, epochs: int) -> TrainingConfig:
 def _model() -> SimpleTransformerLM:
     return SimpleTransformerLM(
         TransformerConfig(
-            vocab_size=len(ADDITION_VOCAB),
-            max_seq_len=9,
+            vocab_size=len(ARITHMETIC_VOCAB),
+            max_seq_len=11,
             d_model=32,
             n_layers=1,
             n_heads=4,

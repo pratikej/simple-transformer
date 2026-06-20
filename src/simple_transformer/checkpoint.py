@@ -16,7 +16,7 @@ from simple_transformer.metrics import TrainMetrics
 class CheckpointConfig:
     """Configuration for epoch checkpoints."""
 
-    checkpoint_dir: str | Path = "checkpoints/local-addition"
+    checkpoint_dir: str | Path = "checkpoints/local-arithmetic"
     keep_last: int = 3
     async_save: bool = True
 

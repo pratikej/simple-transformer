@@ -15,26 +15,28 @@ if TYPE_CHECKING:
 
 PAD_TOKEN = "<pad>"
 EOS_TOKEN = "<eos>"
-ADDITION_VOCAB = (PAD_TOKEN, EOS_TOKEN, *tuple("0123456789+="))
+ARITHMETIC_OPERATIONS = ("+", "-", "*", "/")
+ARITHMETIC_VOCAB = (PAD_TOKEN, EOS_TOKEN, *tuple("0123456789+-*/="))
 PAD_TOKEN_ID = 0
 EOS_TOKEN_ID = 1
 IGNORE_INDEX = -100
 
 
 @dataclass(frozen=True)
-class AdditionExample:
-    """One synthetic addition example."""
+class ArithmeticExample:
+    """One synthetic arithmetic example."""
 
     left: int
     right: int
-    total: int
+    operation: str
+    result: int
     text: str
 
 
-class AdditionTokenizer:
-    """Character tokenizer for addition expressions."""
+class ArithmeticTokenizer:
+    """Character tokenizer for arithmetic expressions."""
 
-    def __init__(self, vocab: tuple[str, ...] = ADDITION_VOCAB) -> None:
+    def __init__(self, vocab: tuple[str, ...] = ARITHMETIC_VOCAB) -> None:
         self.id_to_token = vocab
         self.token_to_id = {token: idx for idx, token in enumerate(vocab)}
         self.pad_token_id = self.token_to_id[PAD_TOKEN]
@@ -68,18 +70,18 @@ class AdditionTokenizer:
         )
 
 
-class AdditionDataset(Dataset):
-    """PyTorch dataset for next-token prediction on addition examples."""
+class ArithmeticDataset(Dataset):
+    """PyTorch dataset for next-token prediction on arithmetic examples."""
 
     def __init__(
         self,
-        examples: list[AdditionExample],
+        examples: list[ArithmeticExample],
         *,
-        tokenizer: AdditionTokenizer | None = None,
+        tokenizer: ArithmeticTokenizer | None = None,
         sequence_length: int | None = None,
     ) -> None:
         self.examples = examples
-        self.tokenizer = AdditionTokenizer() if tokenizer is None else tokenizer
+        self.tokenizer = ArithmeticTokenizer() if tokenizer is None else tokenizer
         self.sequence_length = (
             max(len(example.text) + 1 for example in examples)
             if sequence_length is None and examples
@@ -117,69 +119,56 @@ class AdditionDataset(Dataset):
         }
 
 
-def make_addition_dataset(
+def make_arithmetic_dataset(
     num_examples: int,
     max_digits: int,
     *,
+    operations: tuple[str, ...] = ARITHMETIC_OPERATIONS,
     seed: int | None = None,
-) -> list[AdditionExample]:
-    """Create examples of adding two integers.
+) -> list[ArithmeticExample]:
+    """Create arithmetic examples using the requested operations.
 
     Args:
         num_examples: Number of examples to generate.
         max_digits: Maximum number of digits in both operands.
+        operations: Operations to sample from.
         seed: Optional random seed for reproducible datasets.
 
     Returns:
-        A list of examples formatted as ``"{left}+{right}={total}"``.
+        A list of examples formatted as ``"{left}<op>{right}={result}"``.
     """
 
-    if num_examples < 0:
-        raise ValueError("num_examples must be non-negative")
-    if max_digits < 1:
-        raise ValueError("max_digits must be at least 1")
-
-    rng = Random(seed)
-    min_value, max_value = _max_digit_bounds(max_digits)
-
-    examples: list[AdditionExample] = []
-    for _ in range(num_examples):
-        left = rng.randint(min_value, max_value)
-        right = rng.randint(min_value, max_value)
-        total = left + right
-        examples.append(
-            AdditionExample(
-                left=left,
-                right=right,
-                total=total,
-                text=f"{left}+{right}={total}",
-            )
-        )
-
-    return examples
+    return _make_unique_arithmetic_examples(
+        num_examples=num_examples,
+        max_digits=max_digits,
+        operations=operations,
+        seed=seed,
+    )
 
 
-def make_addition_dataloader(
+def make_arithmetic_dataloader(
     num_examples: int,
     max_digits: int,
     batch_size: int,
     *,
+    operations: tuple[str, ...] = ARITHMETIC_OPERATIONS,
     seed: int | None = None,
     shuffle: bool = True,
     pin_memory: bool = False,
-) -> tuple[DataLoader, AdditionTokenizer]:
-    """Create a DataLoader for next-token prediction on addition examples."""
+) -> tuple[DataLoader, ArithmeticTokenizer]:
+    """Create a DataLoader for next-token prediction on arithmetic examples."""
 
-    examples = make_addition_dataset(
+    examples = make_arithmetic_dataset(
         num_examples=num_examples,
         max_digits=max_digits,
+        operations=operations,
         seed=seed,
     )
-    tokenizer = AdditionTokenizer()
-    dataset = AdditionDataset(
+    tokenizer = ArithmeticTokenizer()
+    dataset = ArithmeticDataset(
         examples,
         tokenizer=tokenizer,
-        sequence_length=max_addition_text_length(max_digits),
+        sequence_length=max_arithmetic_text_length(max_digits),
     )
     loader = DataLoader(
         dataset,
@@ -193,23 +182,24 @@ def make_addition_dataloader(
 
 def make_train_val_loaders(
     config: TrainingConfig,
-) -> tuple[DataLoader, DataLoader, AdditionTokenizer]:
+) -> tuple[DataLoader, DataLoader, ArithmeticTokenizer]:
     """Create train and validation loaders from a training config."""
 
-    examples = _make_unique_addition_examples(
+    examples = _make_unique_arithmetic_examples(
         num_examples=config.train_examples + config.val_examples,
         max_digits=config.max_digits,
+        operations=config.operations,
         seed=config.seed,
     )
 
-    tokenizer = AdditionTokenizer()
-    sequence_length = max_addition_text_length(config.max_digits)
-    train_dataset = AdditionDataset(
+    tokenizer = ArithmeticTokenizer()
+    sequence_length = max_arithmetic_text_length(config.max_digits)
+    train_dataset = ArithmeticDataset(
         examples[: config.train_examples],
         tokenizer=tokenizer,
         sequence_length=sequence_length,
     )
-    val_dataset = AdditionDataset(
+    val_dataset = ArithmeticDataset(
         examples[config.train_examples :],
         tokenizer=tokenizer,
         sequence_length=sequence_length,
@@ -229,60 +219,88 @@ def make_train_val_loaders(
     return train_loader, val_loader, tokenizer
 
 
-def max_addition_text_length(max_digits: int) -> int:
-    """Maximum token length for ``left+right=total`` plus an EOS token."""
+def max_arithmetic_text_length(max_digits: int) -> int:
+    """Maximum token length for ``left<op>right=result`` plus an EOS token."""
 
     if max_digits < 1:
         raise ValueError("max_digits must be at least 1")
 
-    return max_digits + 1 + max_digits + 1 + (max_digits + 1) + 1
+    prompt_length = max_digits + 1 + max_digits + 1
+    result_length = max(2 * max_digits, max_digits + 1)
+    return prompt_length + result_length + 1
 
 
 def _max_digit_bounds(max_digits: int) -> tuple[int, int]:
     return 0, 10**max_digits - 1
 
 
-def _make_unique_addition_examples(
+def _make_unique_arithmetic_examples(
     num_examples: int,
     max_digits: int,
     *,
+    operations: tuple[str, ...] = ARITHMETIC_OPERATIONS,
     seed: int | None = None,
-) -> list[AdditionExample]:
+) -> list[ArithmeticExample]:
     if num_examples < 0:
         raise ValueError("num_examples must be non-negative")
     if max_digits < 1:
         raise ValueError("max_digits must be at least 1")
+    if not operations:
+        raise ValueError("operations must be non-empty")
+    if unsupported := set(operations) - set(ARITHMETIC_OPERATIONS):
+        raise ValueError(f"Unsupported operations: {sorted(unsupported)}")
 
     min_value, max_value = _max_digit_bounds(max_digits)
     value_count = max_value - min_value + 1
-    population_size = value_count * value_count
+    population_size = (
+        value_count
+        * value_count
+        * len([operation for operation in operations if operation != "/"])
+    )
+    if "/" in operations:
+        population_size += value_count * (value_count - 1)
     if num_examples > population_size:
         raise ValueError(
             f"Requested {num_examples} examples, but only {population_size} "
-            "unique operand pairs are available"
+            "unique expressions are available"
         )
 
     rng = Random(seed)
-    pairs: set[tuple[int, int]] = set()
-    while len(pairs) < num_examples:
-        pairs.add(
-            (
-                rng.randint(min_value, max_value),
-                rng.randint(min_value, max_value),
-            )
-        )
+    expressions: set[tuple[int, str, int]] = set()
+    while len(expressions) < num_examples:
+        operation = rng.choice(operations)
+        left = rng.randint(min_value, max_value)
+        right = rng.randint(min_value, max_value)
+        if operation == "/" and right == 0:
+            continue
+        expressions.add((left, operation, right))
 
     examples = []
-    for left, right in pairs:
-        total = left + right
+    for left, operation, right in expressions:
+        result = _evaluate(left, operation, right)
         examples.append(
-            AdditionExample(
+            ArithmeticExample(
                 left=left,
                 right=right,
-                total=total,
-                text=f"{left}+{right}={total}",
+                operation=operation,
+                result=result,
+                text=f"{left}{operation}{right}={result}",
             )
         )
 
     rng.shuffle(examples)
     return examples
+
+
+def _evaluate(left: int, operation: str, right: int) -> int:
+    if operation == "+":
+        return left + right
+    if operation == "-":
+        return left - right
+    if operation == "*":
+        return left * right
+    if operation == "/":
+        if right == 0:
+            return 0
+        return round(left / right)
+    raise ValueError(f"Unsupported operation: {operation}")

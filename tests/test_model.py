@@ -1,11 +1,11 @@
 import torch
 
 from simple_transformer.config import small_model_config
-from simple_transformer.data import AdditionTokenizer
+from simple_transformer.data import ArithmeticTokenizer
 from simple_transformer.model import SimpleTransformerLM
 
 
-def test_small_addition_model_forward_pass():
+def test_small_arithmetic_model_forward_pass():
     config = small_model_config(max_digits=3)
     model = SimpleTransformerLM(config)
     input_ids = torch.randint(0, config.vocab_size, (2, config.max_seq_len - 1))
@@ -23,7 +23,7 @@ def test_small_model_config_sets_flash_from_device():
 
 
 def test_model_generates_for_single_and_variable_length_batches():
-    tokenizer = AdditionTokenizer()
+    tokenizer = ArithmeticTokenizer()
     config = small_model_config(max_digits=3)
     model = SimpleTransformerLM(config)
     single_prompt = torch.tensor([tokenizer.encode("12+3=")], dtype=torch.long)
@@ -52,7 +52,7 @@ def test_model_generates_for_single_and_variable_length_batches():
 
 
 def test_generate_batch_matches_full_length_generate_for_same_length_prompts():
-    tokenizer = AdditionTokenizer()
+    tokenizer = ArithmeticTokenizer()
     config = small_model_config(max_digits=3)
     model = SimpleTransformerLM(config)
     prompts = [
@@ -75,7 +75,7 @@ def test_generate_batch_matches_full_length_generate_for_same_length_prompts():
 
 
 def test_generate_tracks_finished_rows():
-    tokenizer = AdditionTokenizer()
+    tokenizer = ArithmeticTokenizer()
     config = small_model_config(max_digits=3)
     model = SimpleTransformerLM(config)
     eos_id = tokenizer.eos_token_id
@@ -113,7 +113,7 @@ def test_generate_tracks_finished_rows():
 
 
 def test_cached_forward_matches_full_forward():
-    tokenizer = AdditionTokenizer()
+    tokenizer = ArithmeticTokenizer()
     config = small_model_config(max_digits=3)
     model = SimpleTransformerLM(config)
     model.eval()
