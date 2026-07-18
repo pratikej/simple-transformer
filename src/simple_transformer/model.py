@@ -328,14 +328,24 @@ class SimpleTransformerLM(nn.Module):
 
         return output
 
-    @torch.no_grad()
+    @torch.inference_mode()
+    def infer(
+        self,
+        input_ids: torch.Tensor,
+        labels: torch.Tensor | None = None,
+        cache: list[StaticKVCache] | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Run a forward pass with autograd and version tracking disabled."""
+
+        return self(input_ids, labels=labels, cache=cache)
+
+    @torch.inference_mode()
     def generate(
         self,
         input_ids: torch.Tensor,
         max_new_tokens: int,
         eos_token_id: int | None = None,
     ) -> torch.Tensor:
-        self.eval()
         if max_new_tokens < 0:
             raise ValueError("max_new_tokens must be non-negative")
         if max_new_tokens == 0:
@@ -346,7 +356,9 @@ class SimpleTransformerLM(nn.Module):
             device=input_ids.device,
         )
         logits = self(input_ids, cache=cache)["logits"][:, -1, :]
-        finished = torch.zeros(input_ids.size(0), dtype=torch.bool, device=input_ids.device)
+        finished = torch.zeros(
+            input_ids.size(0), dtype=torch.bool, device=input_ids.device
+        )
 
         for _ in range(max_new_tokens):
             if input_ids.size(1) >= self.config.max_seq_len:
@@ -367,7 +379,7 @@ class SimpleTransformerLM(nn.Module):
 
         return input_ids
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def generate_batch(
         self,
         input_ids: list[list[int]] | list[torch.Tensor],

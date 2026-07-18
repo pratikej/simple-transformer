@@ -17,6 +17,16 @@ def test_small_arithmetic_model_forward_pass():
     assert output["loss"].ndim == 0
 
 
+def test_model_infer_uses_inference_mode():
+    config = small_model_config(max_digits=3)
+    model = SimpleTransformerLM(config)
+    input_ids = torch.randint(0, config.vocab_size, (2, config.max_seq_len - 1))
+
+    output = model.infer(input_ids)
+
+    assert output["logits"].is_inference()
+
+
 def test_small_model_config_sets_flash_from_device():
     assert small_model_config(device="cpu").force_flash is False
     assert small_model_config(device="cuda").force_flash is True
