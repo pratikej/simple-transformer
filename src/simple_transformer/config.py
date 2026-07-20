@@ -53,15 +53,15 @@ def small_model_config(
     max_digits: int = 3,
     device: str = "cpu",
 ) -> TransformerConfig:
-    """Create a ~2M parameter config for experiments."""
+    """Create a ~6M parameter config for experiments."""
 
     return TransformerConfig(
         vocab_size=len(ARITHMETIC_VOCAB),
         max_seq_len=max_arithmetic_text_length(max_digits),
-        d_model=192,
-        n_layers=5,
-        n_heads=6,
-        d_ff=448,
+        d_model=256,
+        n_layers=6,
+        n_heads=8,
+        d_ff=1024,
         dropout=0.0,
         bias=False,
         force_flash=device.startswith("cuda"),
@@ -132,7 +132,7 @@ def local_training_config(
     use_cuda = device.startswith("cuda")
     return TrainingConfig(
         max_digits=max_digits,
-        train_examples=65_536,
+        train_examples=131_072,
         val_examples=16_384,
         batch_size=64,
         epochs=20,
