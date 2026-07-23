@@ -16,10 +16,9 @@ dependencies = [
     "tqdm>=4.66",
     "matplotlib>=3.7",
     "ipykernel>=6.25",
-]
-
-[project.optional-dependencies]
-quantization = [
+    "jax>=0.4.30",
+    "flax>=0.10",
+    "optax>=0.2.3",
     "torchao>=0.17",
 ]
 
